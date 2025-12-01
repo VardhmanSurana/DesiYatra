@@ -116,7 +116,7 @@ graph TD
 
 ```bash
 # 1. Clone repository
-git clone <repo-url>
+git clone https://github.com/VardhmanSurana/DesiYatra
 cd DesiYatra
 
 # 2. Install dependencies (using uv)
@@ -196,60 +196,6 @@ pytest tests/test_database.py -v
 *   **Redis Connection Error**: Check if `redis-server` is running on port 6379.
 *   **Audio Issues**: Verify `SARVAM_API_KEY` is valid. If not, system falls back to basic TTS.
 
----
-
-## 📁 Project Structure
-
-```
-DesiYatra/
-├── agents/
-│   ├── adk_agents/              # Google ADK agent implementations
-│   │   ├── scout/               # Vendor discovery agent
-│   │   │   ├── agent.py         # Parallel-Sequential architecture
-│   │   │   ├── tools.py         # Search tools
-│   │   │   ├── google_maps_grounding_tool.py
-│   │   │   └── google_search_grounding_tool.py
-│   │   ├── safety_officer/      # Vendor vetting agent
-│   │   │   ├── agent.py
-│   │   │   └── tools.py
-│   │   ├── bargainer/           # Negotiation agent
-│   │   │   ├── agent.py         # Loop-based reasoning
-│   │   │   ├── atomic_tools.py  # Atomic negotiation tools
-│   │   │   ├── voice_pipeline.py # TTS/STT integration
-│   │   │   └── negotiation_brain.py (legacy)
-│   │   ├── orchestrator.py      # Main workflow coordinator
-│   │   └── shared/
-│   │       └── types.py         # Pydantic models
-│   ├── shared/                  # Shared utilities
-│   │   ├── config.py
-│   │   ├── database.py          # Supabase client
-│   │   ├── redis_client.py
-│   │   ├── logger.py
-│   │   └── models.py
-│   └── main.py                  # FastAPI application
-├── tests/                       # Test scripts
-│   ├── test_twilio_quick_call.py
-│   ├── test_twilio_with_webhooks.py
-│   ├── test_google_tts.py
-│   ├── test_ngrok_webhook.py
-│   ├── test_refactored_agents.py
-│   ├── test_adk_agents.py
-│   ├── test_bargainer.py
-│   ├── test_database.py
-│   └── test_db_session_service.py
-├── migrations/                  # Database migrations
-├── logs/                        # Application logs
-├── .env                         # Environment variables
-├── .env.example                 # Example environment config
-├── pyproject.toml               # Python dependencies
-├── docker-compose.yml           # Docker services
-├── Dockerfile                   # Container definition
-├── README.md                    # This file
-├── IMPROVEMENTS.md              # Completed improvements
-├── adk_improvements.md          # ADK enhancement tracking
-├── ARCHITECTURE_DIAGRAM.md      # Visual architecture
-└── ADK_AGENT_REFACTOR_SUMMARY.md # Refactoring details
-```
 
 ---
 
@@ -457,11 +403,6 @@ pytest tests/test_database.py -v
 
 ---
 
-## 🤝 Contributing
-
-This is a proprietary project. For collaboration inquiries, please contact the maintainers.
-
----
 
 ## 📄 License
 
@@ -479,7 +420,7 @@ Built with ❤️ for Indian travelers
 
 For issues or questions:
 - Create an issue in the repository
-- Contact: [your-email@example.com]
+- Contact: iamvardhmansurana2004@gmail.com
 
 ---
 
