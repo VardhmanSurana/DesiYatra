@@ -1,5 +1,9 @@
 # 🇮🇳 DesiYatra - AI Travel Negotiation Agent System
 
+<div align="center">
+  <img src="DeshiYatra.jpeg" alt="DesiYatra AI Agents" width="100%" />
+</div>
+
 > **AI-powered travel negotiation agents that find local vendors, call them, and negotiate prices in Hindi/Hinglish**
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -15,81 +19,66 @@ DesiYatra is a sophisticated multi-agent AI system designed to automate travel s
 
 ### Key Features
 
-- 🤖 **4 Specialized AI Agents** working in coordination
-- 📞 **Real Voice Calls** via Twilio with Hindi TTS/STT
-- 🔍 **Multi-Source Vendor Discovery** (Google Maps, JustDial, IndiaMart)
-- 💬 **Natural Hindi/Hinglish Negotiation** using LLM reasoning
-- 🛡️ **Fraud Detection & Safety Vetting** before calls
-- 📊 **Real-time Session Management** with Redis & PostgreSQL
+- 🤖 **Multi-Agent Orchestration**: 4 specialized agents (Scout, Safety, Bargainer, Munshi) working in harmony.
+- 🗣️ **Voice-Native Negotiation**: Conducts real phone calls in **Hindi/Hinglish** with natural Indian accents.
+- 🧠 **Smart Bargaining**: Uses **Vector Search** to retrieve negotiation tactics and adapts to vendor psychology.
+- 🛡️ **Safety First**: Vets vendors against a fraud database and analyzes call transcripts in real-time.
+- ⚡ **High Performance**: Parallel vendor discovery and async execution for fast results.
+- 📊 **Full Observability**: Real-time session tracking with Redis and persistent storage in Supabase.
 
 ---
 
-## 🏗️ Architecture
+## 🔄 How It Works
 
-### Multi-Agent System
+### The Workflow
 
+1.  **User Request**: User submits a trip request (e.g., "Taxi for 4 people to Manali, budget ₹3000").
+2.  **Scout Agent (The Finder)**:
+    *   Searches Google Maps & Google Search in parallel.
+    *   Simulates searches on JustDial & IndiaMart.
+    *   **Result**: A deduplicated list of 10-15 potential vendors with phone numbers.
+3.  **Safety Officer (The Vetter)**:
+    *   Checks vendor history in the database.
+    *   Assigns a risk score (Green/Yellow/Red).
+    *   **Result**: A filtered list of "Safe" vendors to contact.
+4.  **Bargainer Agent (The Negotiator)**:
+    *   **Initiates Call**: Uses Twilio to dial the vendor.
+    *   **Speaks Hindi**: Uses Sarvam AI to speak natural Hindi with an Indian accent.
+    *   **Negotiates**:
+        *   *Phase 1*: Asks for availability.
+        *   *Phase 2*: Gets the initial quote.
+        *   *Phase 3*: Bargains using tactics from the **Vector Knowledge Base** (e.g., "Market rate is lower", "We are regular customers").
+        *   *Phase 4*: Closes the deal if within budget.
+5.  **Result**: The user receives a confirmed booking or a list of best negotiated offers.
+
+### System Architecture
+
+```mermaid
+graph TD
+    User[User Request] --> Munshi[Munshi Orchestrator]
+    
+    subgraph "Phase 1: Discovery"
+        Munshi --> Scout[Scout Agent]
+        Scout -->|Parallel Search| GMaps[Google Maps]
+        Scout -->|Parallel Search| GSearch[Google Search]
+        Scout -->|Parallel Search| JustDial[JustDial Sim]
+    end
+    
+    subgraph "Phase 2: Safety"
+        Scout -->|Vendor List| Safety[Safety Officer]
+        Safety -->|Check History| DB[(Supabase)]
+        Safety -->|Risk Score| SafeList[Safe Vendors]
+    end
+    
+    subgraph "Phase 3: Negotiation"
+        SafeList --> Bargainer[Bargainer Agent]
+        Bargainer -->|Voice Call| Twilio[Twilio]
+        Bargainer -->|TTS/STT| Sarvam[Sarvam AI]
+        Bargainer -->|Strategy| VectorDB[(Vertex AI Vector Search)]
+    end
+    
+    Bargainer -->|Deal Confirmed| Result[Final Booking]
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Munshi (Orchestrator)                    │
-│              Coordinates the entire workflow                │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-        ┌─────────────────────┼─────────────────────┐
-        ↓                     ↓                     ↓
-┌───────────────┐    ┌────────────────┐    ┌──────────────┐
-│ Scout Agent   │ →  │ Safety Officer │ →  │  Bargainer   │
-│ Find Vendors  │    │  Vet Vendors   │    │  Negotiate   │
-└───────────────┘    └────────────────┘    └──────────────┘
-```
-
-### Agent Details
-
-#### 1. **Scout Agent** (Parallel-Sequential Pattern)
-- **Purpose**: Find potential vendors from multiple sources
-- **Architecture**: `ParallelAgent` + `SequentialAgent`
-- **Sources**: 
-  - Google Search Grounding
-  - Google Maps Grounding
-  - JustDial (simulated)
-  - IndiaMart (simulated)
-- **New Features**:
-  - ✨ **Automatic Market Rate Calculation** - Extracts prices from vendor metadata or uses heuristic estimation
-  - ✨ **Custom Vendor Selection Planner** - Intelligent ranking by trust score, ratings, and source quality
-  - 📊 Scores vendors: Trust (40pts) + Rating (20pts) + Source (20pts)
-- **Output**: Deduplicated, ranked list of vendors + calculated market_rate
-
-#### 2. **Safety Officer Agent**
-- **Purpose**: Vet vendors for safety and fraud detection
-- **Tools**: 
-  - `filter_safe_vendors`: Checks vendor history in database
-  - `analyze_transcript_chunk`: Real-time fraud detection during calls
-- **New Features**:
-  - ✨ **Custom Safety Decision Planner** - Nuanced risk assessment (GREEN/YELLOW/RED)
-  - 🛡️ Risk scoring from fraud signals and vendor history
-  - ⚠️ Graduated monitoring levels
-- **Output**: Verified safe vendors list with risk scores
-
-#### 3. **Bargainer Agent** (Loop-Based Reasoning)
-- **Purpose**: Conduct voice negotiations with vendors
-- **Architecture**: `LoopAgent` with atomic tools
-- **Tools**:
-  - `initiate_call`: Start Twilio call
-  - `send_message`: Send negotiation messages
-  - `accept_deal`: Finalize deal
-  - `end_call`: Exit negotiation loop
-- **New Features**:
-  - ✨ **Custom Negotiation Planner** - Strategic price decisions based on market rate
-  - 💰 No hardcoded values - requires all context from upstream agents
-  - 👥 Party size awareness - "room for 4 people", "trip for 2 people"
-  - 🎯 Adapts to vendor style (stubborn vs flexible)
-  - 📚 **Vector Search Knowledge Base** - Semantic search for negotiation tactics
-- **Intelligence**: LLM reasons about tactics dynamically (not rule-based)
-- **Output**: List of successful deals
-
-#### 4. **Munshi (Orchestrator)**
-- **Purpose**: Coordinate the entire workflow
-- **Pattern**: `SequentialAgent`
-- **Flow**: Scout → Safety Officer → Bargainer
 
 ---
 
@@ -118,10 +107,10 @@ DesiYatra is a sophisticated multi-agent AI system designed to automate travel s
 
 ### Prerequisites
 
-- Python 3.12+
-- uv package manager
-- Docker & Docker Compose (optional)
-- ngrok (for webhook testing)
+- **Python 3.12+**
+- **uv** package manager (Recommended for speed)
+- **Docker & Docker Compose** (Optional, for containerized run)
+- **ngrok** (Required for local webhook testing)
 
 ### Quick Start
 
@@ -130,65 +119,82 @@ DesiYatra is a sophisticated multi-agent AI system designed to automate travel s
 git clone <repo-url>
 cd DesiYatra
 
-# 2. Install dependencies
+# 2. Install dependencies (using uv)
 uv pip install -e .
 
-# 3. Copy environment variables
+# 3. Setup Environment
 cp .env.example .env
 
-# 4. Configure API keys in .env
-# - GOOGLE_API_KEY
+# 4. Configure API Keys in .env
+# Required:
+# - GOOGLE_API_KEY (Gemini)
 # - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 # - SUPABASE_URL, SUPABASE_KEY
-# - SARVAM_API_KEY (optional)
+# Optional:
+# - SARVAM_API_KEY (For Hindi Voice)
+# - GOOGLE_CLOUD_PROJECT (For Vector Search)
 
-# 5. Start Redis (if not using Docker)
+# 5. Start Redis (Required for state management)
+# Option A: Local
 redis-server
+# Option B: Docker
+docker run -d -p 6379:6379 redis
 
-# 6. Run the application
+# 6. Run the Application
 uvicorn agents.main:app --reload
 ```
 
-### Docker Setup
+### Docker Setup (Production-like)
 
 ```bash
-# Start all services
-docker-compose up
+# Start all services (App, Redis)
+docker-compose up --build
 
-# The API will be available at http://localhost:8000
+# API will be available at http://localhost:8000
 ```
 
 ---
 
-## 🚀 Usage
+## 🎭 Demo Scenario
 
-### 1. Test Twilio Integration
+**User Request**: *"I need a taxi for 4 people from Manali Bus Stand to Solang Valley tomorrow morning. Budget is ₹2500."*
 
-```bash
-# Quick call test (no server needed)
-python tests/test_twilio_quick_call.py
+**Agent Action**:
+1.  **Scout**: Finds "Himalayan Cabs" (+91...) and "Manali Taxi Union" (+91...). Calculates market rate is ~₹2800.
+2.  **Safety**: Vets vendors. "Himalayan Cabs" has 4.5 stars and no fraud history -> **SAFE**.
+3.  **Bargainer**: Calls "Himalayan Cabs".
+    *   *Vendor*: "Sir, ₹3500 lagega." (It will cost ₹3500)
+    *   *Agent*: "Bhaiya, market rate toh ₹2800 chal raha hai. Hum regular aate hain." (Brother, market rate is ₹2800. We come regularly.)
+    *   *Vendor*: "Chalo ₹3000 de dena." (Okay, give ₹3000.)
+    *   *Agent*: "₹2900 final karte hain, abhi book kar dijiye." (Let's finalize at ₹2900, book it now.)
+    *   *Vendor*: "Theek hai sir." (Okay sir.)
+4.  **Result**: Booking confirmed at ₹2900 (saved ₹600).
 
-# Webhook-based test (requires server + ngrok)
-python tests/test_twilio_with_webhooks.py
-```
+---
 
-### 2. Test Sarvam AI TTS
+## 🧪 Testing
 
-```bash
-python tests/test_sarvam_tts.py
-```
-
-### 3. Test ADK Agents
-
-```bash
-python tests/test_refactored_agents.py
-```
-
-### 4. Check Webhook Accessibility
+### Run Key Tests
 
 ```bash
-python tests/test_ngrok_webhook.py
+# 1. Run All Tests
+pytest tests/ -v
+
+# 2. Test Agent Architecture (Scout + Bargainer Structure)
+pytest tests/test_refactored_agents.py -v
+
+# 3. Test Bargainer Logic (Negotiation State Machine)
+pytest tests/test_bargainer.py -v
+
+# 4. Test Database Integration
+pytest tests/test_database.py -v
 ```
+
+### Troubleshooting
+
+*   **Twilio Error 11200**: Ensure `WEBHOOK_BASE_URL` in `.env` matches your ngrok URL.
+*   **Redis Connection Error**: Check if `redis-server` is running on port 6379.
+*   **Audio Issues**: Verify `SARVAM_API_KEY` is valid. If not, system falls back to basic TTS.
 
 ---
 
