@@ -109,8 +109,9 @@ graph TD
 
 - **Python 3.12+**
 - **uv** package manager (Recommended for speed)
-- **Docker & Docker Compose** (Optional, for containerized run)
+- **Docker & Docker Compose** (Required for Redis and PostgreSQL)
 - **ngrok** (Required for local webhook testing)
+- **ffmpeg** (Required for audio conversion for streaming TTS)
 
 ### Quick Start
 
@@ -130,24 +131,24 @@ cp .env.example .env
 # - GOOGLE_API_KEY (Gemini)
 # - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 # - SUPABASE_URL, SUPABASE_KEY
-# Optional:
 # - SARVAM_API_KEY (For Hindi Voice)
-# - GOOGLE_CLOUD_PROJECT (For Vector Search)
+# - GOOGLE_CLOUD_PROJECT (For Firestore and other GCP services)
 
-# 5. Start Redis (Required for state management)
-# Option A: Local
-redis-server
-# Option B: Docker
-docker run -d -p 6379:6379 redis
+# 5. Start Infrastructure Services (Redis & PostgreSQL)
+docker-compose up -d redis postgres
 
-# 6. Run the Application
-uvicorn agents.main:app --reload
+# 6. Run the Application (in development mode, with auto-reload)
+fastapi dev agents/main.py
+
+# 7. Start ngrok to expose your local server (replace with your port if different)
+ngrok http 8000
+# Copy the https:// URL and update WEBHOOK_BASE_URL in your .env file
 ```
 
 ### Docker Setup (Production-like)
 
 ```bash
-# Start all services (App, Redis)
+# Start all services (App, Redis, PostgreSQL)
 docker-compose up --build
 
 # API will be available at http://localhost:8000
@@ -174,27 +175,35 @@ docker-compose up --build
 
 ## 🧪 Testing
 
-### Run Key Tests
+### Run All Tests
 
 ```bash
-# 1. Run All Tests
-pytest tests/ -v
+.venv/bin/python -m pytest tests/ -v
+```
 
-# 2. Test Agent Architecture (Scout + Bargainer Structure)
-pytest tests/test_refactored_agents.py -v
+### Run Specific Tests
 
-# 3. Test Bargainer Logic (Negotiation State Machine)
-pytest tests/test_bargainer.py -v
+```bash
+# Test Agent Architecture (Scout + Bargainer Structure)
+.venv/bin/python -m pytest tests/test_refactored_agents.py -v
 
-# 4. Test Database Integration
-pytest tests/test_database.py -v
+# Test Bargainer Logic (Negotiation State Machine) - New full test
+.venv/bin/python -m pytest tests/test_bargainer_full.py -v
+
+# Test Database Integration
+.venv/bin/python -m pytest tests/test_database.py -v
+
+# Run live test call (as vendor)
+.venv/bin/python scripts/live_test_call.py
 ```
 
 ### Troubleshooting
 
 *   **Twilio Error 11200**: Ensure `WEBHOOK_BASE_URL` in `.env` matches your ngrok URL.
-*   **Redis Connection Error**: Check if `redis-server` is running on port 6379.
-*   **Audio Issues**: Verify `SARVAM_API_KEY` is valid. If not, system falls back to basic TTS.
+*   **Redis Connection Error**: Ensure `docker-compose up -d redis postgres` is running.
+*   **Firestore 403 Error**: Ensure Google Cloud Project ID is set, `GOOGLE_APPLICATION_CREDENTIALS` points to a valid JSON key, and Cloud Firestore API is enabled for your project.
+*   **Sarvam TTS Failure**: Verify `SARVAM_API_KEY` is valid. Ensure `log_level` is `DEBUG` for detailed errors.
+*   **`ModuleNotFoundError` during tests**: Ensure you run tests via `.venv/bin/python -m pytest ...` to use the correct Python environment.
 
 
 ---
@@ -228,10 +237,16 @@ WEBHOOK_BASE_URL=https://your-ngrok-url.ngrok-free.dev
 ### Optional
 
 ```bash
+# Redis (Local development via Docker)
+# REDIS_URL=redis://localhost:6379
+
 # Vector Search (Vertex AI) - For production knowledge base
 # Leave commented to use mock mode during development
 # VECTOR_INDEX_ENDPOINT_ID=projects/PROJECT/locations/REGION/indexEndpoints/ID
 # VECTOR_DEPLOYED_INDEX_ID=your_deployed_index_id
+
+# Application Settings
+LOG_LEVEL=DEBUG # Set to DEBUG for detailed logs during development
 
 # Testing
 TEST_PHONE_NUMBER=+919876543210
@@ -245,6 +260,8 @@ When creating trip requests, you **must** provide:
 - `budget_max`: User's maximum budget
 - `party_size`: Number of people traveling (NEW - required for accurate quotes)
 - `category`: Service type (taxi, hotel, etc.)
+- `vendor_type`: Specific type of vendor (e.g., "Taxi", "Hotel", "Restaurant")
+- `requirements`: Specific user requirements (e.g., "Airport drop", "deluxe room with breakfast")
 
 **Note**: `market_rate` is now **automatically calculated** by Scout agent - no need to provide it!
 
@@ -255,12 +272,18 @@ When creating trip requests, you **must** provide:
 ### Text-to-Speech (TTS)
 
 **Current**: Sarvam AI Bulbul
+- **Approach**: Hybrid (Initial greeting via static file, subsequent turns via streaming WebSocket)
+- **Latency Optimization**: LLM instructed to use Hindi filler words (e.g., "हाँ", "जी") to mask generation latency.
 - Voice: `anushka` (Hindi female)
-- Format: mulaw (Twilio compatible)
+- Format: mulaw (Twilio compatible, 8000Hz, 8-bit, mono)
 - Model: bulbul:v2
 - Languages: 11 Indian languages supported
 - Quality: Natural-sounding speech with authentic Indian accents
 
+### Speech-to-Text (STT)
+
+**Current**: Twilio Media Streams with Google STT (enhanced `phone_call` model)
+- **Language**: Configured for `hi-IN` (Hindi-India) for improved recognition of Hinglish.
 
 ---
 
@@ -296,7 +319,7 @@ python scripts/setup_vector_search.py
 
 # 4. Add IDs to .env (script will output these)
 VECTOR_INDEX_ENDPOINT_ID=projects/.../indexEndpoints/...
-VECTOR_DEPLOYED_INDEX_ID=desiyatra_tactics_deployed
+VECTOR_DEPLOYED_INDEX_ID=your_deployed_index_id
 ```
 
 ### Knowledge Base Contents
@@ -310,50 +333,6 @@ Initial tactics include:
 - Closing tactics
 
 **Cost**: ~$75/month for 1-2 replicas (can scale to zero when not in use)
-
----
-
-## 🧪 Testing
-
-### Run All Tests
-
-```bash
-pytest tests/ -v
-```
-
-### Run Specific Tests
-
-```bash
-# Test Twilio integration
-python tests/test_twilio_quick_call.py
-
-# Test Google TTS
-python tests/test_google_tts.py
-
-# Test agent architecture
-pytest tests/test_refactored_agents.py -v
-
-# Test database
-pytest tests/test_database.py -v
-```
-
----
-
-## 📊 API Endpoints
-
-### Health & Status
-
-- `GET /` - Root endpoint
-- `GET /health` - Health check (Redis, PostgreSQL)
-- `GET /ready` - Readiness probe
-
-### Twilio Webhooks
-
-- `POST /twilio/incoming` - Handle incoming calls
-- `POST /twilio/voice/{call_id}` - Voice webhook with TwiML
-- `POST /twilio/recording/{call_id}` - Recording callback
-- `POST /twilio/transcription/{call_id}` - Transcription callback
-- `POST /twilio/status/{call_id}` - Call status updates
 
 ---
 
@@ -373,8 +352,12 @@ pytest tests/test_database.py -v
 7. **Automatic Market Rate Calculation** - No hardcoded values
 8. **Vector Search Integration** - Semantic knowledge base (Vertex AI)
 9. **Party Size Awareness** - Accurate quotes for groups
-10. **Persistent Sessions** - SQLite-based session management
+10. **Persistent Sessions** - Redis for real-time queues, Firestore for state.
 11. **Async Execution** - Concurrent operations with semaphores
+12. **Low-Latency Streaming TTS (Hybrid Approach)** - Initial greeting via static file, subsequent turns via Twilio Media Streams + Sarvam AI + `ffmpeg` for real-time audio.
+13. **Improved STT Accuracy** - Twilio `<Gather>` configured for `hi-IN` language.
+14. **Robust Negotiation Brain** - Validates context fields and includes specific refusal handling.
+15. **Perceived Latency Optimization** - LLM instructed to use Hindi filler words for faster audio streaming.
 
 ### 📈 Performance Metrics
 
@@ -384,6 +367,7 @@ pytest tests/test_database.py -v
 - **Market Rate Accuracy**: Hardcoded → Calculated from real vendor data
 - **Knowledge Base**: Keyword matching → Semantic vector search
 - **Cost**: 1 LLM call → 3-6 calls per negotiation (higher intelligence)
+- **TTS Latency**: Reduced significantly with streaming and filler words.
 
 ---
 
@@ -431,6 +415,7 @@ For issues or questions:
 - **Twilio** - Telephony infrastructure
 - **Sarvam AI** - Hindi voice models
 - **Supabase** - Backend infrastructure
+- **Redis** - Real-time queueing
 
 ---
 
