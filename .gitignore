@@ -8,6 +8,8 @@ build/
 develop-eggs/
 dist/
 downloads/
+.static/audio/call_recordings/*
+.static/audio/*
 eggs/
 .eggs/
 lib/
@@ -66,3 +68,4 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+

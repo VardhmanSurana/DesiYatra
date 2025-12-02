@@ -248,8 +248,6 @@ WEBHOOK_BASE_URL=https://your-ngrok-url.ngrok-free.dev
 # Application Settings
 LOG_LEVEL=DEBUG # Set to DEBUG for detailed logs during development
 
-# Testing
-TEST_PHONE_NUMBER=+919876543210
 AGENT_NAME=DesiYatra
 ```
 
