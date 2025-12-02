@@ -32,24 +32,29 @@ DesiYatra is a sophisticated multi-agent AI system designed to automate travel s
 
 ### The Workflow
 
-1.  **User Request**: User submits a trip request (e.g., "Taxi for 4 people to Manali, budget ₹3000").
+1.  **User Request**: User submits a trip request with destination, budget, party size, and requirements list.
 2.  **Scout Agent (The Finder)**:
-    *   Searches Google Maps & Google Search in parallel.
-    *   Simulates searches on JustDial & IndiaMart.
-    *   **Result**: A deduplicated list of 10-15 potential vendors with phone numbers.
+    *   **Parallel Search**: Executes Google Maps Grounding, Google Search Grounding, JustDial (simulated), and IndiaMart (simulated) concurrently using `ParallelAgent`.
+    *   **Deduplication**: Merges results and removes duplicates based on phone numbers.
+    *   **Market Rate Calculation**: Automatically calculates market rate from vendor quotes.
+    *   **Result**: A deduplicated list of 10-15 potential vendors with phone numbers and estimated market rate.
 3.  **Safety Officer (The Vetter)**:
-    *   Checks vendor history in the database.
-    *   Assigns a risk score (Green/Yellow/Red).
+    *   Queries BigQuery data warehouse for vendor history.
+    *   Uses custom `SafetyDecisionPlanner` for nuanced risk assessment.
+    *   Assigns risk scores and filters unsafe vendors.
     *   **Result**: A filtered list of "Safe" vendors to contact.
 4.  **Bargainer Agent (The Negotiator)**:
-    *   **Initiates Call**: Uses Twilio to dial the vendor.
-    *   **Speaks Hindi**: Uses Sarvam AI to speak natural Hindi with an Indian accent.
-    *   **Negotiates**:
-        *   *Phase 1*: Asks for availability.
-        *   *Phase 2*: Gets the initial quote.
-        *   *Phase 3*: Bargains using tactics from the **Vector Knowledge Base** (e.g., "Market rate is lower", "We are regular customers").
-        *   *Phase 4*: Closes the deal if within budget.
-5.  **Result**: The user receives a confirmed booking or a list of best negotiated offers.
+    *   **Call Initiation**: Creates Twilio call with immediate WebSocket connection via Media Streams.
+    *   **Hybrid Voice System**:
+        *   **TTS**: Sarvam AI Bulbul (Hindi, natural Indian accent) via streaming WebSocket.
+        *   **STT**: Google Speech-to-Text with `phone_call` model optimized for `hi-IN`.
+    *   **Negotiation Brain**: LLM-powered decision engine that:
+        *   Retrieves tactics from Vector Knowledge Base (semantic search).
+        *   Adapts to vendor psychology (stubborn/flexible profiles).
+        *   Uses custom `NegotiationPlanner` for strategic price decisions.
+        *   Speaks in natural Hindi/Hinglish with filler words to mask latency.
+    *   **State Management**: Firestore for persistent call state, round tracking, and conversation history.
+5.  **Result**: User receives confirmed bookings with negotiated prices or best available offers.
 
 ### System Architecture
 
@@ -95,33 +100,105 @@ graph TD
 | **API Server** | FastAPI | REST API endpoints |
 | **Database** | Supabase (PostgreSQL) | Vendor & trip data |
 | **Cache/State** | Redis | Session state & pub/sub |
-| **Telephony** | Twilio | Voice calls |
-| **Voice (TTS)** | Sarvam AI Bulbul | Hindi text-to-speech |
-| **Voice (STT)** | Sarvam AI | Hindi speech-to-text |
+| **Telephony** | Twilio Media Streams | Voice calls with WebSocket streaming |
+| **Voice (TTS)** | Sarvam AI Bulbul | Hindi text-to-speech (streaming) |
+| **Voice (STT)** | Google Speech-to-Text | Hindi speech-to-text (`phone_call` model) |
 | **Search** | Google Grounding API | Vendor discovery |
 | **Package Manager** | uv | Fast Python package management |
 
 ---
 
+### Key Components
+
+#### 1. FastAPI Server (`main.py`)
+- **WebSocket Endpoint** (`/twilio/stream/{call_id}`): Handles bidirectional audio streaming
+- **Immediate Connection**: WebSocket connects when call answers, greeting plays via stream
+- **Hybrid Voice**: Integrates Sarvam TTS + Google STT
+
+#### 2. Scout Agent (`scout/agent.py`)
+- **ParallelAgent**: Runs 4 searches concurrently (Google Maps, Google Search, JustDial, IndiaMart)
+- **Deduplication**: Removes duplicate vendors by phone number
+- **Market Rate**: Calculates average from vendor quotes
+
+#### 3. Safety Officer (`safety_officer/agent.py`)
+- **LlmAgent**: Uses custom `SafetyDecisionPlanner`
+- **BigQuery Integration**: Queries vendor history
+- **Risk Scoring**: Green/Yellow/Red classification
+
+#### 4. Bargainer Agent (`bargainer/`)
+- **Streaming Negotiator** (`streaming_negotiator.py`): Async loop with 6-round max
+- **Negotiation Brain** (`negotiation_brain.py`): LLM prompt engineering for Hindi/Hinglish
+- **Voice Handler** (`google_stt_voice.py`): 
+  - Sarvam TTS: MP3 → ffmpeg → mulaw → Twilio
+  - Google STT: mulaw → base64 → Google Cloud
+- **Atomic Tools** (`atomic_tools.py`): `initiate_call`, `send_message`, `accept_deal`, `end_call`
+
+#### 5. Custom Planners (`shared/custom_planners.py`)
+- **NegotiationPlanner**: Strategic price decisions based on vendor psychology
+- **VendorSelectionPlanner**: Ranks vendors by rating/distance
+- **SafetyDecisionPlanner**: Nuanced risk assessment
+
+#### 6. State Management
+- **Firestore**: Call state, conversation history, round tracking
+- **Redis**: Session queues (optional)
+- **Supabase**: Vendor database, trip records
+
+---
+
+## 🛠️ Tech Stack Details
+
 ## 📦 Installation
 
 ### Prerequisites
 
-- **Python 3.12+**
-- **uv** package manager (Recommended for speed)
-- **Docker & Docker Compose** (Required for Redis and PostgreSQL)
-- **ngrok** (Required for local webhook testing)
-- **ffmpeg** (Required for audio conversion for streaming TTS)
+- **Docker & Docker Compose** (Required)
+- **ngrok** (Required for Twilio webhooks)
+- **gcloud CLI** (Required for GCP setup) - [Install Guide](https://cloud.google.com/sdk/docs/install)
 
-### Quick Start
+### Quick Start with Docker (Recommended)
 
 ```bash
 # 1. Clone repository
 git clone https://github.com/VardhmanSurana/DesiYatra
 cd DesiYatra
 
+# 2. Automated GCP Setup (One-time)
+python scripts/setup_gcp.py
+# This will:
+# - Enable required GCP APIs (Vertex AI, Firestore, Speech-to-Text, BigQuery)
+# - Create service account with permissions
+# - Generate gcp-credentials.json
+# - Update .env file automatically
+
+# 3. Add remaining API keys to .env
+# - SARVAM_API_KEY (from https://www.sarvam.ai/)
+# - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+# - SUPABASE_URL, SUPABASE_KEY
+
+# 4. Start all services
+docker-compose up --build
+
+# 5. In another terminal, start ngrok
+ngrok http 8000
+# Copy the https:// URL and update WEBHOOK_BASE_URL in your .env file
+
+# 6. Restart the container to apply webhook URL
+docker-compose restart agents
+
+# API will be available at http://localhost:8000
+```
+
+### Local Development Setup (Without Docker)
+
+```bash
+# Prerequisites: Python 3.12+, uv, ffmpeg
+
+# 1. Clone repository
+git clone https://github.com/VardhmanSurana/DesiYatra
+cd DesiYatra
+
 # 2. Install dependencies (using uv)
-uv pip install -e .
+uv pip install -r requirements.txt
 
 # 3. Setup Environment
 cp .env.example .env
@@ -140,18 +217,9 @@ docker-compose up -d redis postgres
 # 6. Run the Application (in development mode, with auto-reload)
 fastapi dev agents/main.py
 
-# 7. Start ngrok to expose your local server (replace with your port if different)
+# 7. Start ngrok to expose your local server
 ngrok http 8000
 # Copy the https:// URL and update WEBHOOK_BASE_URL in your .env file
-```
-
-### Docker Setup (Production-like)
-
-```bash
-# Start all services (App, Redis, PostgreSQL)
-docker-compose up --build
-
-# API will be available at http://localhost:8000
 ```
 
 ---
@@ -259,7 +327,7 @@ When creating trip requests, you **must** provide:
 - `party_size`: Number of people traveling (NEW - required for accurate quotes)
 - `category`: Service type (taxi, hotel, etc.)
 - `vendor_type`: Specific type of vendor (e.g., "Taxi", "Hotel", "Restaurant")
-- `requirements`: Specific user requirements (e.g., "Airport drop", "deluxe room with breakfast")
+- `requirements`: List of specific needs (e.g., `["one-way trip", "2 days stay", "AC seat reserved"]`)
 
 **Note**: `market_rate` is now **automatically calculated** by Scout agent - no need to provide it!
 
@@ -269,19 +337,27 @@ When creating trip requests, you **must** provide:
 
 ### Text-to-Speech (TTS)
 
-**Current**: Sarvam AI Bulbul
-- **Approach**: Hybrid (Initial greeting via static file, subsequent turns via streaming WebSocket)
-- **Latency Optimization**: LLM instructed to use Hindi filler words (e.g., "हाँ", "जी") to mask generation latency.
-- Voice: `anushka` (Hindi female)
-- Format: mulaw (Twilio compatible, 8000Hz, 8-bit, mono)
-- Model: bulbul:v2
-- Languages: 11 Indian languages supported
-- Quality: Natural-sounding speech with authentic Indian accents
+**Current**: Sarvam AI Bulbul (Streaming via WebSocket)
+- **Approach**: Real-time streaming via Twilio Media Streams
+- **Process**: 
+  1. WebSocket connects immediately when call answers
+  2. Greeting plays via streaming TTS (no pre-generated files)
+  3. Subsequent responses stream in real-time
+- **Audio Pipeline**: MP3 → ffmpeg conversion → mulaw → Twilio
+- **Latency Optimization**: LLM instructed to use Hindi filler words (e.g., "हाँ", "जी") to mask generation latency
+- **Voice**: `hitesh` (male) or `manisha` (female)
+- **Format**: mulaw (Twilio compatible, 8000Hz, 8-bit, mono)
+- **Model**: bulbul:v2
+- **Languages**: 11 Indian languages supported
+- **Quality**: Natural-sounding speech with authentic Indian accents
 
 ### Speech-to-Text (STT)
 
-**Current**: Twilio Media Streams with Google STT (enhanced `phone_call` model)
-- **Language**: Configured for `hi-IN` (Hindi-India) for improved recognition of Hinglish.
+**Current**: Google Speech-to-Text (Streaming via Twilio Media Streams)
+- **Model**: `phone_call` (optimized for telephony audio)
+- **Language**: `hi-IN` (Hindi-India) for improved Hinglish recognition
+- **Audio Format**: mulaw 8kHz from Twilio → base64 decoded → Google STT
+- **Buffering**: 5-second audio buffer for better transcription accuracy
 
 ---
 
@@ -339,8 +415,8 @@ Initial tactics include:
 ### ✅ Completed Improvements
 
 1. **Native Google Grounding** - Maps + Search integration
-2. **Parallel-Sequential Scout** - 4x faster vendor discovery
-3. **Loop-Based Bargainer** - Dynamic LLM reasoning for negotiations
+2. **Parallel-Sequential Scout** - 4x faster vendor discovery using `ParallelAgent`
+3. **Streaming Negotiation** - Real-time voice conversation via WebSocket
 4. **Atomic Tools** - Composable, testable negotiation actions
 5. **Type Safety** - Pydantic schemas for all agent outputs
 6. **Custom Domain Planners** - Replaced BuiltInPlanner with specialized logic:
@@ -350,12 +426,13 @@ Initial tactics include:
 7. **Automatic Market Rate Calculation** - No hardcoded values
 8. **Vector Search Integration** - Semantic knowledge base (Vertex AI)
 9. **Party Size Awareness** - Accurate quotes for groups
-10. **Persistent Sessions** - Redis for real-time queues, Firestore for state.
+10. **Persistent Sessions** - Firestore for call state, round tracking, and conversation history
 11. **Async Execution** - Concurrent operations with semaphores
-12. **Low-Latency Streaming TTS (Hybrid Approach)** - Initial greeting via static file, subsequent turns via Twilio Media Streams + Sarvam AI + `ffmpeg` for real-time audio.
-13. **Improved STT Accuracy** - Twilio `<Gather>` configured for `hi-IN` language.
-14. **Robust Negotiation Brain** - Validates context fields and includes specific refusal handling.
-15. **Perceived Latency Optimization** - LLM instructed to use Hindi filler words for faster audio streaming.
+12. **Immediate WebSocket Connection** - Connects parallel to first message for zero latency
+13. **Hybrid Voice System** - Sarvam TTS + Google STT for optimal quality
+14. **Robust Negotiation Brain** - Validates context fields and includes specific refusal handling
+15. **Perceived Latency Optimization** - LLM instructed to use Hindi filler words for faster audio streaming
+16. **Requirements as List** - Structured multi-requirement support (e.g., `["one-way trip", "AC vehicle"]`)
 
 ### 📈 Performance Metrics
 
@@ -365,7 +442,8 @@ Initial tactics include:
 - **Market Rate Accuracy**: Hardcoded → Calculated from real vendor data
 - **Knowledge Base**: Keyword matching → Semantic vector search
 - **Cost**: 1 LLM call → 3-6 calls per negotiation (higher intelligence)
-- **TTS Latency**: Reduced significantly with streaming and filler words.
+- **TTS Latency**: Reduced significantly with streaming and filler words
+- **Call Setup**: WebSocket connects immediately (parallel to greeting)
 
 ---
 
@@ -406,15 +484,5 @@ For issues or questions:
 
 ---
 
-## 🙏 Acknowledgments
-
-- **Google ADK** - Multi-agent framework
-- **Google Gemini** - LLM reasoning
-- **Twilio** - Telephony infrastructure
-- **Sarvam AI** - Hindi voice models
-- **Supabase** - Backend infrastructure
-- **Redis** - Real-time queueing
-
----
 
 **Made in India 🇮🇳 | For India 🇮🇳**

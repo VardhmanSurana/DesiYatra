@@ -35,6 +35,7 @@ class TripContext(BaseModel):
     budget_max: float = Field(description="The maximum budget for the service.")
     party_size: int = Field(description="Number of people traveling.")
     market_rate: Optional[float] = Field(default=None, description="The estimated market rate (calculated by Scout agent).")
+    requirements: List[str] = Field(default_factory=list, description="List of specific requirements (e.g., 'one-way trip', '2 days stay', 'AC seat').")
 
 class SessionState(BaseModel):
     """

@@ -1,25 +1,38 @@
-google-generativeai
-fastapi
-uvicorn
+# Core Framework
+fastapi[standard]
+uvicorn[standard]
 websockets
-redis
-supabase
-twilio
-httpx
+python-dotenv
 pydantic
 pydantic-settings
-python-dotenv
+
+# Google AI & Cloud
+google-generativeai
+google-adk
+google-cloud-firestore
+google-cloud-aiplatform
+google-cloud-speech
+google-cloud-bigquery
+
+# Voice & Telephony
+twilio
+sarvamai
+
+# Database & Cache
+supabase
+redis
+psycopg2-binary
+
+# Utilities
+httpx
+requests
 loguru
 tenacity
+phonenumbers
 beautifulsoup4
 lxml
-phonenumbers
-psycopg2-binary
-google-cloud-bigquery
-google-cloud-firestore
-requests
-SpeechRecognition
-pydub
-google-adk
-google-cloud
-fastapi[standard]
+
+# Testing (optional)
+pytest
+pytest-asyncio
+pytest-cov

@@ -69,6 +69,14 @@ def initiate_call(vendor: Dict[str, Any], trip_context: Dict[str, Any], use_real
     """Initiates a call to a vendor and returns the call session ID."""
     call_id = f"call_{vendor['phone']}"
     
+    # Pre-generate greeting audio for zero-latency start
+    vendor_name = vendor.get("name", "Vendor")
+    greeting_text = f"हाँ, नमस्ते। {vendor_name} से बात हो रही है?"
+    vendor_gender = vendor.get("gender", "female")
+    
+    # Determine agent gender (opposite of vendor for natural conversation)
+    agent_gender = "female" if vendor_gender == "male" else "male"
+    
     call_state = {
         "vendor": vendor,
         "trip_context": trip_context,
@@ -76,55 +84,49 @@ def initiate_call(vendor: Dict[str, Any], trip_context: Dict[str, Any], use_real
         "current_quote": None,
         "history": [],
         "twilio_call_sid": None,
-        "status": "INITIATED"
+        "status": "INITIATED",
+        "greeting_audio_url": None,
+        "agent_gender": agent_gender
     }
-    _save_call_state(call_id, call_state)
     
+    # Generate greeting audio file before call starts
+    if use_real_twilio:
+        from agents.shared.audio_utils import generate_and_store_sarvam_audio
+        greeting_url = generate_and_store_sarvam_audio(call_id, greeting_text, agent_gender)
+        call_state["greeting_audio_url"] = greeting_url
+        logger.info(f"🎵 Pre-generated greeting: {greeting_url}")
+    
+    _save_call_state(call_id, call_state)
     logger.info(f"📞 Initiated call to {vendor['name']} ({call_id})")
     
-    # Real Twilio call (optional)
+    # Real Twilio call with Media Streams
     if use_real_twilio:
         try:
-            from twilio.twiml.voice_response import VoiceResponse, Connect
+            from twilio.twiml.voice_response import VoiceResponse, Connect, Stream
             
             client = _get_twilio_client()
             twilio_from = os.getenv("TWILIO_PHONE_NUMBER")
             base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
             
-            # Get vendor name for initial greeting
-            vendor_name = vendor.get("name", "Vendor")
-            greeting_text = f"Hello, {vendor_name} se bol rahe hain?"
-            vendor_gender = vendor.get("gender", "female")
+            # Extract domain from base_url
+            domain = base_url.replace('https://', '').replace('http://', '')
+            ws_url = f"wss://{domain}/twilio/stream/{call_id}"
             
-            # --- HYBRID APPROACH ---
-            # 1. Generate Audio File for INITIAL greeting (Reliability)
-            audio_url = generate_and_store_sarvam_audio(call_id, greeting_text, vendor_gender)
+            logger.info(f"🔗 WebSocket URL: {ws_url}")
             
-            # 2. Generate TwiML: Play File -> Gather -> Stream (for subsequent)
+            # TwiML: Connect to WebSocket immediately, greeting plays via WebSocket
             response = VoiceResponse()
+            connect = Connect()
+            stream = Stream(url=ws_url)
+            connect.append(stream)
+            response.append(connect)
             
-            if audio_url:
-                response.play(audio_url)
-            else:
-                # Fallback to generic TTS if Sarvam generation fails
-                logger.warning("Using generic Twilio fallback for greeting.")
-                response.say("Namaste. Kya aap sun pa rahe hain?", language="hi-IN")
-
-            response.pause(length=1) 
-            
-            # The Gather action will hit our callback, which will then use Streaming
-            response.gather(
-                input="speech",
-                speech_timeout="auto",
-                speech_model="phone_call",
-                enhanced=True,
-                language="hi-IN",
-                action=f"{base_url}/twilio/gather/{call_id}"
-            )
+            # Keep call alive for 60 seconds
+            response.pause(length=60)
             
             twiml_str = str(response)
             
-            # Create call with inline TwiML
+            # Create call
             call = client.calls.create(
                 to=vendor['phone'],
                 from_=twilio_from,
@@ -136,7 +138,7 @@ def initiate_call(vendor: Dict[str, Any], trip_context: Dict[str, Any], use_real
             )
             
             _save_call_state(call_id, {"twilio_call_sid": call.sid})
-            logger.info(f"📞 Dialing Vendor... (SID: {call.sid})")
+            logger.info(f"📞 Dialing with Media Streams... (SID: {call.sid})")
         except Exception as e:
             logger.error(f"Twilio call failed: {e}")
             import traceback

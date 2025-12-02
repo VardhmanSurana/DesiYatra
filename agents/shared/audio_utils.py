@@ -5,15 +5,15 @@ from twilio.twiml.voice_response import VoiceResponse
 from agents.adk_agents.bargainer.voice_pipeline import VoicePipeline
 from agents.shared.logger import logger
 
-def generate_and_store_sarvam_audio(call_id: str, text: str, gender: str = "female") -> str:
+def generate_and_store_sarvam_audio(call_id: str, text: str, gender: str = "male") -> str:
     """
     Generates audio using Sarvam TTS, saves it to a static file, and returns the URL.
     """
     speaker_map = {
-        "male": "viraj",
-        "female": "anushka"
+        "male": "hitesh",
+        "female": "manisha"
     }
-    speaker = speaker_map.get(gender.lower(), "anushka")
+    speaker = speaker_map.get(gender.lower(), "hitesh")
     
     pipeline = VoicePipeline(call_id)
     audio_bytes = pipeline.speak(text, use_real_tts=True, speaker=speaker)

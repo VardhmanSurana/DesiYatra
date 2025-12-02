@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.kiro/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+logs/*.log
+
+# Environment
+.env
+
+# Data
+data/
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Misc
+.DS_Store
+*.jpeg
+*.jpg
+*.png
+DeshiYatra.jpeg

@@ -8,8 +8,6 @@ build/
 develop-eggs/
 dist/
 downloads/
-.static/audio/call_recordings/*
-.static/audio/*
 eggs/
 .eggs/
 lib/
@@ -47,6 +45,10 @@ config/gcp-credentials.json
 # Logs
 logs/
 *.log
+
+# Call Recordings & Audio Files
+static/audio/
+logs/call_recordings/
 
 # IDEs
 .idea/

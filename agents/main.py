@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status, Request, Response
+from fastapi import FastAPI, status, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from agents.shared import logger
@@ -9,6 +9,7 @@ import json
 import httpx
 from dotenv import load_dotenv
 from agents.shared.audio_utils import generate_and_store_sarvam_audio
+from agents.adk_agents.bargainer.google_stt_voice import GoogleSTTVoice  # Hybrid approach
 
 # Load environment variables
 load_dotenv()
@@ -218,3 +219,72 @@ async def twilio_incoming_webhook(request: Request):
     response = VoiceResponse()
     response.say("Incoming call handler")
     return Response(content=str(response), media_type="application/xml")
+
+# --- Twilio Media Streams WebSocket ---
+active_streams = {}  # Store active streaming sessions
+
+@app.websocket("/twilio/stream/{call_id}")
+async def twilio_media_stream(websocket: WebSocket, call_id: str):
+    """Handle bidirectional audio streaming with Twilio Media Streams"""
+    logger.info(f"🔌 WebSocket connection attempt for call: {call_id}")
+    
+    await websocket.accept()
+    logger.info(f"✅ WebSocket accepted for call: {call_id}")
+    
+    # Get gender from call state
+    from agents.shared.firestore_tools import _get_db
+    db = _get_db()
+    doc = db.collection('active_calls').document(call_id).get()
+    call_state = doc.to_dict() if doc.exists else {}
+    agent_gender = call_state.get("agent_gender", "male")
+    
+    stream_sid = None
+    voice_stream = GoogleSTTVoice(call_id, gender=agent_gender)  # Hybrid: Sarvam TTS + Google STT
+    negotiation_task = None
+    
+    try:
+        async for message in websocket.iter_text():
+            data = json.loads(message)
+            event = data.get("event")
+            
+            if event == "start":
+                stream_sid = data["start"]["streamSid"]
+                voice_stream.attach_twilio_ws(websocket, stream_sid)
+                active_streams[call_id] = voice_stream
+                logger.info(f"📞 Stream started: {stream_sid}")
+                
+                # Play greeting immediately via WebSocket
+                vendor = call_state.get("vendor", {})
+                vendor_name = vendor.get("name", "Vendor")
+                greeting_text = f"Hello, {vendor_name} se bol rahe hain?"
+                await voice_stream.speak(greeting_text)
+                
+                # Start negotiation loop
+                from agents.adk_agents.bargainer.streaming_negotiator import run_streaming_negotiation
+                negotiation_task = asyncio.create_task(
+                    run_streaming_negotiation(call_id, voice_stream)
+                )
+                
+            elif event == "media":
+                # Incoming audio from vendor
+                payload = data["media"]["payload"]
+                await voice_stream.process_twilio_audio(payload)
+                
+            elif event == "stop":
+                logger.info(f"🛑 Stream stopped: {stream_sid}")
+                if negotiation_task:
+                    negotiation_task.cancel()
+                break
+                
+    except WebSocketDisconnect:
+        logger.info(f"🔌 WebSocket disconnected: {call_id}")
+    except Exception as e:
+        logger.error(f"❌ Stream error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        if negotiation_task:
+            negotiation_task.cancel()
+        await voice_stream.cleanup()
+        if call_id in active_streams:
+            del active_streams[call_id]

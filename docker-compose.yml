@@ -1,7 +1,24 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database for Supabase
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: desiyatra_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - desiyatra
+
+  # PostgreSQL Database (Optional - for local Supabase)
   postgres:
     image: postgres:15-alpine
     container_name: desiyatra_postgres
@@ -23,41 +40,6 @@ services:
     networks:
       - desiyatra
 
-  # Supabase Vector (pgvector extension)
-  supabase_vector:
-    image: ankane/pgvector:v0.5.1
-    container_name: desiyatra_pgvector
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgvector_data:/var/lib/postgresql/data
-    networks:
-      - desiyatra
-
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: desiyatra_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - desiyatra
-
   # DesiYatra Agent System
   agents:
     build:
@@ -67,18 +49,15 @@ services:
     volumes:
       - ./agents:/app/agents
       - ./logs:/app/logs
-      - ./data:/app/data
-      - ./migrations:/app/migrations
+      - ./static:/app/static
+      - ./scripts:/app/scripts
     env_file:
       - .env
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     ports:
       - "8000:8000"
-    command: uvicorn agents.main:app --host 0.0.0.0 --port 8000 --reload
     dns:
       - 8.8.8.8
     networks:
@@ -86,11 +65,9 @@ services:
     environment:
       DOCKER_ENV: "True"
       REDIS_URL: redis://redis:6379
-      POSTGRES_URL: postgresql://postgres:postgres@postgres:5432/postgres
 
 volumes:
   postgres_data:
-  pgvector_data:
   redis_data:
 
 networks:
